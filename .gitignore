@@ -1,0 +1,21 @@
+# Blender files
+*.blend1
+*.blend2
+*.blend@
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Build and local test output
+dist/
+.test-profile*/
+viewcube-test.png
+visual_test_viewcube.py
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

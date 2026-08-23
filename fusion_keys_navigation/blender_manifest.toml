@@ -1,0 +1,16 @@
+schema_version = "1.0.0"
+
+id = "fusion_keys_navigation"
+version = "0.2.2"
+name = "Fusion 按键与导航"
+tagline = "复刻 Fusion 360 风格的按键、鼠标导航和视图立方体"
+maintainer = "qwejun"
+type = "add-on"
+
+website = "https://github.com/qwejun/blender-fusion-navigation"
+
+blender_version_min = "5.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
