@@ -1,43 +1,34 @@
 # Blender Fusion Navigation
 
-为习惯 Fusion 360 的用户提供一套轻量、可随时关闭的 Blender 导航过渡层。
+为习惯 Fusion 360 的用户提供一套轻量、可随时关闭的 Blender 模式菜单过渡层。
 
-插件只修改三类交互：鼠标导航、常用快捷键和右上角视图立方体。它不会修改单位、工作区、主题或建模数据。
+插件只接管 3D 视图中的 `Tab` 模式菜单和右上角视图立方体。其它导航、建模和快捷键均保持 Blender 原生行为。
 
 > Blender 5.2 LTS 扩展，界面语言为中文。
 
 ## 功能
 
-### Fusion 风格鼠标导航
-
-| 操作 | 功能 |
-| --- | --- |
-| 鼠标中键拖动 | 平移视图 |
-| `Shift + 鼠标中键` | 旋转视图 |
-| 鼠标滚轮 | 缩放视图，保持 Blender 默认行为 |
-
-### 常用快捷键
-
-| 按键 | Blender 操作 |
-| --- | --- |
-| `M` | 移动 |
-| `F` | 圆角 / 倒角（编辑模式） |
-| `S` | 搜索命令 |
-| `I` | 测量工具 |
-| `Q` | 按压拖动 / 挤出区域（编辑模式） |
-| `Ctrl + Y` | 重做 |
-
-`E`、`R`、`Delete` 和 `Ctrl + Z` 已与 Fusion 的习惯基本一致，因此插件不会覆盖它们。
-
 ### Fusion 风格视图立方体
 
 - 替换 Blender 原生导航轴，关闭插件后自动恢复
 - 随当前视角实时旋转
-- 点击六个面切换前、后、左、右、上、下视图
+- 点击六个面切换前、后、左、右、顶、底视图
 - 点击角部切换等轴测视图
 - Home 按钮返回默认等轴测视图
 - 彩色 `X/Y/Z` 方向标识
 - 根据 Blender UI 缩放自动调整尺寸和边距
+
+### Tab 模式菜单
+
+在 3D 视图中按 `Tab` 打开中文模式菜单：
+
+- 对象、顶点、边、面模式
+- 撤销
+- 恢复视角
+- 编辑模式下的遮挡选择
+- 切换正交 / 透视
+
+插件只使用 `Tab`，不会占用 `Q`、Page Down、鼠标侧键或其它 Blender 快捷键。
 
 ## 安装
 
@@ -51,11 +42,10 @@
 
 ## 设置
 
-进入 `编辑 > 偏好设置 > 插件 > Fusion 按键与导航`，可以分别开关：
+进入 `编辑 > 偏好设置 > 插件 > Fusion 按键与导航`，可以开关：
 
-- Fusion 鼠标导航
-- Fusion 快捷键
 - Fusion 视图立方体
+- Tab 模式菜单
 
 关闭或卸载插件后，插件添加的键位会被移除，Blender 原生导航轴也会恢复到启用插件前的状态。
 
@@ -75,7 +65,7 @@
 ```powershell
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" `
   --command extension validate `
-  ".\dist\fusion_keys_navigation-0.2.2.zip"
+  ".\dist\fusion_keys_navigation-0.5.5.zip"
 ```
 
 ## 兼容性
@@ -90,7 +80,7 @@
 
 ## English
 
-Blender Fusion Navigation is a focused Blender 5.2 LTS add-on that provides Fusion 360-style mouse navigation, shortcut aliases, and an interactive ViewCube. Each feature group can be disabled independently, and uninstalling the add-on restores Blender's native navigation behavior.
+Blender Fusion Navigation is a focused Blender 5.2 LTS add-on that provides a Chinese Tab mode menu and an interactive ViewCube. It leaves Blender's other navigation and shortcuts unchanged.
 
 ## 许可与商标
 

@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "fusion_keys_navigation"
-version = "0.2.2"
+version = "0.5.5"
 name = "Fusion 按键与导航"
-tagline = "复刻 Fusion 360 风格的按键、鼠标导航和视图立方体"
+tagline = "Fusion 360 风格导航、视图和建模辅助菜单，参考 MACHIN3tools 交互"
 maintainer = "qwejun"
 type = "add-on"
 

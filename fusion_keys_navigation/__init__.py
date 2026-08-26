@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Fusion 按键与导航",
     "author": "qwejun",
-    "version": (0, 2, 2),
+    "version": (0, 5, 5),
     "blender": (5, 2, 0),
     "location": "编辑 > 偏好设置 > 插件",
     "description": "复刻 Fusion 360 风格的按键、鼠标导航和视图立方体",
@@ -14,15 +14,15 @@ import bpy
 import blf
 import math
 from bpy.props import BoolProperty
-from bpy.types import Gizmo, GizmoGroup, Operator
+from bpy.types import Gizmo, GizmoGroup, Operator, Menu
 from mathutils import Matrix, Vector
 
 
 _KEYMAP_ITEMS = {
-    "navigation": [],
-    "shortcuts": [],
+    "tab": [],
 }
 _NATIVE_NAV_GIZMO_STATE = {}
+_CONFLICTING_KEYMAP_STATE = []
 
 
 def _set_group_active(group, active):
@@ -30,12 +30,8 @@ def _set_group_active(group, active):
         keymap_item.active = active
 
 
-def _update_navigation(self, _context):
-    _set_group_active("navigation", self.enable_navigation)
-
-
-def _update_shortcuts(self, _context):
-    _set_group_active("shortcuts", self.enable_shortcuts)
+def _update_tab(self, _context):
+    _set_group_active("tab", self.enable_modeling_tools)
 
 
 class FUSIONKEYS_AddonPreferences(bpy.types.AddonPreferences):
@@ -45,13 +41,13 @@ class FUSIONKEYS_AddonPreferences(bpy.types.AddonPreferences):
         name="Fusion 鼠标导航",
         description="使用鼠标中键平移，Shift 加鼠标中键旋转视图",
         default=True,
-        update=_update_navigation,
+        update=None,
     )
     enable_shortcuts: BoolProperty(
         name="Fusion 快捷键",
         description="启用在 Blender 中具有明确对应功能的 Fusion 常用快捷键",
         default=True,
-        update=_update_shortcuts,
+        update=None,
     )
     enable_view_cube: BoolProperty(
         name="Fusion 视图立方体",
@@ -59,36 +55,225 @@ class FUSIONKEYS_AddonPreferences(bpy.types.AddonPreferences):
         default=True,
         update=lambda self, _context: _update_view_cube(self),
     )
+    enable_modeling_tools: BoolProperty(
+        name="Fusion 建模辅助",
+        description="启用 3D 视图中的 Tab 模式菜单",
+        default=True,
+        update=_update_tab,
+    )
 
     def draw(self, _context):
         layout = self.layout
 
-        layout.prop(self, "enable_navigation")
-        navigation = layout.column(align=True)
-        navigation.enabled = self.enable_navigation
-        navigation.label(text="拖动鼠标中键：平移视图")
-        navigation.label(text="Shift + 鼠标中键：旋转视图")
-        navigation.label(text="滚动鼠标滚轮：缩放视图（保持 Blender 默认）")
-
-        layout.separator()
-        layout.prop(self, "enable_shortcuts")
-        shortcuts = layout.column(align=True)
-        shortcuts.enabled = self.enable_shortcuts
-        shortcuts.label(text="M：移动")
-        shortcuts.label(text="F：圆角 / 倒角（编辑模式）")
-        shortcuts.label(text="S：搜索命令")
-        shortcuts.label(text="I：测量工具")
-        shortcuts.label(text="Q：按压拖动 / 挤出区域（编辑模式）")
-        shortcuts.label(text="Ctrl + Y：重做")
-
-        layout.separator()
-        note = layout.box()
-        note.label(text="以下按键与 Fusion 基本一致，因此保持 Blender 默认设置：")
-        note.label(text="E：挤出，R：旋转，Delete：删除，Ctrl + Z：撤销")
+        layout.label(text="本插件只接管 3D 视图中的 Tab 模式菜单")
+        layout.label(text="其它快捷键和导航全部保持 Blender 原生")
         layout.separator()
         layout.prop(self, "enable_view_cube")
         layout.label(text="点击立方体的面：正视 / 侧视 / 顶视")
         layout.label(text="点击角：等轴测视图；Home：默认等轴测")
+        layout.separator()
+        layout.prop(self, "enable_modeling_tools", text="启用 Tab 模式菜单")
+
+
+class FUSIONKEYS_OT_set_selection_mode(Operator):
+    bl_idname = "mesh.fusion_set_selection_mode"
+    bl_label = "Fusion 选择模式"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    mode: bpy.props.EnumProperty(items=(
+        ('VERT', "顶点", "顶点选择"),
+        ('EDGE', "边", "边选择"),
+        ('FACE', "面", "面选择"),
+    ))
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        if context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+        bpy.ops.mesh.select_mode(type=self.mode)
+        return {'FINISHED'}
+
+
+class FUSIONKEYS_OT_set_object_mode(Operator):
+    """Enter Object Mode without passing an invalid request to Blender."""
+
+    bl_idname = "object.fusion_set_object_mode"
+    bl_label = "对象模式"
+    bl_options = {'REGISTER'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+
+    def execute(self, context):
+        # A mesh can be visible without being the active object (for example
+        # after deselection). In that case Object Mode is already the only
+        # meaningful target, so finish quietly instead of showing an error.
+        if context.active_object is None:
+            return {'FINISHED'}
+        if context.mode != 'OBJECT':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        return {'FINISHED'}
+
+
+class FUSIONKEYS_OT_toggle_edit_option(Operator):
+    bl_idname = "mesh.fusion_toggle_edit_option"
+    bl_label = "Fusion 编辑选项"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    option: bpy.props.EnumProperty(items=(
+        ('OCCLUDE', "遮挡选择", "切换只选择可见面/穿透选择"),
+        ('MERGE', "自动合并", "切换编辑模式自动合并顶点"),
+    ))
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None and context.active_object.type == 'MESH'
+
+    def execute(self, context):
+        if context.mode != 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='EDIT')
+        space = context.space_data
+        if self.option == 'OCCLUDE':
+            if hasattr(space, "shading") and hasattr(space.shading, "show_xray"):
+                space.shading.show_xray = not space.shading.show_xray
+        else:
+            ts = context.scene.tool_settings
+            ts.use_mesh_automerge = not ts.use_mesh_automerge
+        return {'FINISHED'}
+
+
+class FUSIONKEYS_OT_surface_slide(Operator):
+    bl_idname = "mesh.fusion_surface_slide"
+    bl_label = "Fusion 表面滑移"
+    bl_description = "沿现有网格表面滑移选中的顶点"
+    bl_options = {'REGISTER', 'UNDO'}
+
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None and context.active_object.type == 'MESH'
+
+    def invoke(self, context, event):
+        # Blender's native vertex slide is the safest topology-preserving
+        # surface adjustment available without replacing the mesh data.
+        return bpy.ops.transform.vert_slide('INVOKE_DEFAULT')
+
+    def execute(self, context):
+        return bpy.ops.transform.vert_slide('EXEC_DEFAULT')
+
+
+class FUSIONKEYS_MT_modes(Menu):
+    bl_idname = "FUSIONKEYS_MT_modes"
+    bl_label = "Fusion 模式菜单"
+
+    def draw(self, context):
+        pie = self.layout.menu_pie()
+        object_mode = pie.row()
+        object_mode.enabled = context.active_object is not None
+        object_mode.operator("object.fusion_set_object_mode", text="对象", icon='OBJECT_DATA')
+        if context.active_object is not None and context.active_object.type == 'MESH':
+            pie.operator("mesh.fusion_set_selection_mode", text="顶点", icon='VERTEXSEL').mode = 'VERT'
+            pie.operator("mesh.fusion_set_selection_mode", text="边", icon='EDGESEL').mode = 'EDGE'
+            pie.operator("mesh.fusion_set_selection_mode", text="面", icon='FACESEL').mode = 'FACE'
+        pie.operator("ed.undo", text="撤销", icon='LOOP_BACK')
+        restore_view = pie.operator("view3d.view_all", text="恢复视角", icon='HOME')
+        restore_view.center = True
+        if context.mode == 'EDIT_MESH' and context.active_object is not None:
+            pie.operator("mesh.fusion_toggle_edit_option", text="遮挡选择", icon='XRAY').option = 'OCCLUDE'
+        else:
+            pie.separator()
+        region_3d = getattr(context.space_data, "region_3d", None)
+        is_perspective = (
+            True if region_3d is None
+            else region_3d.view_perspective == 'PERSP'
+        )
+        pie.operator(
+            "view3d.view_persportho",
+            text="切换到正交" if is_perspective else "切换到透视",
+        )
+
+
+class FUSIONKEYS_MT_modeling(Menu):
+    bl_idname = "FUSIONKEYS_MT_modeling"
+    bl_label = "Fusion 建模菜单"
+
+    def draw(self, context):
+        pie = self.layout.menu_pie()
+        is_edit = context.mode == 'EDIT_MESH'
+
+        # East: extrusion submenu, kept on Blender's native operators.
+        extrude = pie.row()
+        extrude.enabled = is_edit
+        extrude.menu("FUSIONKEYS_MT_extrude", text="拉伸 / 推拉", icon='EXTRUDE_REGION')
+        pie.menu("FUSIONKEYS_MT_views", text="视图", icon='VIEW3D')
+        pie.menu("FUSIONKEYS_MT_snapping", text="吸附", icon='SNAP_ON')
+        pie.menu("FUSIONKEYS_MT_modes", text="模式", icon='VERTEXSEL')
+        pie.operator("ed.undo", text="撤销", icon='LOOP_BACK')
+        restore_view = pie.operator("view3d.view_all", text="恢复视角", icon='HOME')
+        restore_view.center = True
+
+
+class FUSIONKEYS_MT_selection(Menu):
+    bl_idname = "FUSIONKEYS_MT_selection"
+    bl_label = "选择模式"
+
+    def draw(self, context):
+        layout = self.layout
+        if context.mode != 'EDIT_MESH':
+            layout.operator("object.fusion_set_object_mode", text="对象", icon='OBJECT_DATA')
+        row = layout.row()
+        row.enabled = context.mode == 'EDIT_MESH' and context.active_object is not None
+        row.operator("mesh.fusion_set_selection_mode", text="顶点", icon='VERTEXSEL').mode = 'VERT'
+        row = layout.row()
+        row.enabled = context.mode == 'EDIT_MESH' and context.active_object is not None
+        row.operator("mesh.fusion_set_selection_mode", text="边", icon='EDGESEL').mode = 'EDGE'
+        row = layout.row()
+        row.enabled = context.mode == 'EDIT_MESH' and context.active_object is not None
+        row.operator("mesh.fusion_set_selection_mode", text="面", icon='FACESEL').mode = 'FACE'
+
+
+class FUSIONKEYS_MT_extrude(Menu):
+    bl_idname = "FUSIONKEYS_MT_extrude"
+    bl_label = "拉伸 / 推拉"
+
+    def draw(self, _context):
+        layout = self.layout
+        layout.operator("mesh.extrude_region_move", text="挤出区域", icon='EXTRUDE_REGION')
+        layout.operator("mesh.extrude_region_shrink_fatten", text="沿法线挤出", icon='NORMALS_FACE')
+        layout.operator("mesh.extrude_manifold", text="挤出并集", icon='MOD_SOLIDIFY')
+        layout.operator("mesh.inset", text="内插面", icon='INSET_FACES')
+
+
+class FUSIONKEYS_MT_views(Menu):
+    bl_idname = "FUSIONKEYS_MT_views"
+    bl_label = "视图"
+
+    def draw(self, context):
+        layout = self.layout
+        for direction, label in (
+            ('FRONT', "前视图"), ('BACK', "后视图"),
+            ('LEFT', "左视图"), ('RIGHT', "右视图"),
+            ('TOP', "顶视图"), ('BOTTOM', "底视图"),
+            ('ISO', "等轴测视图"),
+        ):
+            op = layout.operator("view3d.fusion_view_cube", text=label)
+            op.direction = direction
+
+
+class FUSIONKEYS_MT_snapping(Menu):
+    bl_idname = "FUSIONKEYS_MT_snapping"
+    bl_label = "吸附"
+
+    def draw(self, context):
+        layout = self.layout
+        ts = context.scene.tool_settings
+        layout.prop(ts, "use_snap", text="启用吸附")
+        layout.prop(ts, "snap_elements", text="吸附元素")
+        layout.prop(ts, "snap_target", text="吸附目标")
+        layout.prop(ts, "use_snap_align_rotation", text="对齐旋转")
 
 
 class FUSIONKEYS_OT_view_cube(Operator):
@@ -196,8 +381,8 @@ class FUSIONKEYS_GIZMOGROUP_view_cube(GizmoGroup):
             ('LEFT', "左", (-1, 0, 0), ((-1, 1, -1), (-1, -1, -1), (-1, -1, 1), (-1, 1, 1))),
             ('BACK', "后", (0, 1, 0), ((1, 1, -1), (-1, 1, -1), (-1, 1, 1), (1, 1, 1))),
             ('FRONT', "前", (0, -1, 0), ((-1, -1, -1), (1, -1, -1), (1, -1, 1), (-1, -1, 1))),
-            ('TOP', "上", (0, 0, 1), ((-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1))),
-            ('BOTTOM', "下", (0, 0, -1), ((-1, 1, -1), (1, 1, -1), (1, -1, -1), (-1, -1, -1))),
+            ('TOP', "顶", (0, 0, 1), ((-1, -1, 1), (1, -1, 1), (1, 1, 1), (-1, 1, 1))),
+            ('BOTTOM', "底", (0, 0, -1), ((-1, 1, -1), (1, 1, -1), (1, -1, -1), (-1, -1, -1))),
         )
         for direction, label, normal, vertices in face_specs:
             gz = self.gizmos.new(FUSIONKEYS_GIZMO_view_cube_face.bl_idname)
@@ -377,7 +562,10 @@ def _add_keymap_item(
     alt=False,
     properties=None,
 ):
-    keyconfig = bpy.context.window_manager.keyconfigs.addon
+    # Blender 5.2 does not reliably dispatch extension keymaps from
+    # keyconfigs.addon. Store this single opt-in shortcut in the user
+    # keyconfig so it participates in the active keymap immediately.
+    keyconfig = bpy.context.window_manager.keyconfigs.user
     if keyconfig is None:
         return
 
@@ -404,67 +592,116 @@ def _add_keymap_item(
     _KEYMAP_ITEMS[group].append((keymap, keymap_item))
 
 
-def _register_keymaps():
-    # Fusion swaps Blender's default middle-mouse actions.
-    _add_keymap_item(
-        "navigation",
-        "3D View",
-        "view3d.move",
-        "MIDDLEMOUSE",
-        space_type="VIEW_3D",
-    )
-    _add_keymap_item(
-        "navigation",
-        "3D View",
-        "view3d.rotate",
-        "MIDDLEMOUSE",
-        space_type="VIEW_3D",
-        shift=True,
-    )
+def _remove_stale_modeling_keymaps():
+    """Remove shortcuts left by older versions, keeping Blender defaults."""
+    for keyconfig in (bpy.context.window_manager.keyconfigs.user,
+                      bpy.context.window_manager.keyconfigs.addon):
+        if keyconfig is None:
+            continue
+        for keymap in keyconfig.keymaps:
+            for item in list(keymap.keymap_items):
+                try:
+                    name = item.properties.name
+                except (AttributeError, TypeError):
+                    name = ""
+                is_old_plugin_shortcut = keyconfig == bpy.context.window_manager.keyconfigs.addon and (
+                    (keymap.name == "3D View" and item.idname in {"view3d.move", "view3d.rotate"}
+                     and item.type == "MIDDLEMOUSE")
+                    or (keymap.name == "3D View" and item.idname == "wm.search_menu" and item.type == "S")
+                    or (keymap.name == "3D View" and item.idname == "wm.tool_set_by_id" and item.type == "I")
+                    or (keymap.name in {"Object Mode", "Mesh"} and item.idname == "transform.translate" and item.type == "M")
+                    or (keymap.name == "Mesh" and item.idname == "mesh.bevel" and item.type == "F")
+                    or (keymap.name == "Window" and item.idname == "ed.redo" and item.type == "Y" and item.ctrl)
+                )
+                if name.startswith("FUSIONKEYS_MT_") or is_old_plugin_shortcut:
+                    keymap.keymap_items.remove(item)
 
-    # Only map Fusion commands that have a close, predictable Blender match.
+
+def _disable_conflicting_alt_q():
+    """Let Alt+Q open our menu instead of Blender's Transfer Mode command."""
+    _CONFLICTING_KEYMAP_STATE.clear()
+    for keyconfig in (bpy.context.window_manager.keyconfigs.default,
+                      bpy.context.window_manager.keyconfigs.user):
+        if keyconfig is None:
+            continue
+        for keymap in keyconfig.keymaps:
+            if keymap.name != "Object Non-modal":
+                continue
+            for item in keymap.keymap_items:
+                if item.idname != "object.transfer_mode":
+                    continue
+                if item.type == 'Q' and item.alt:
+                    _CONFLICTING_KEYMAP_STATE.append((item, item.active))
+                    item.active = False
+
+
+def _disable_conflicting_tab():
+    """Let Tab open the Modes pie instead of Blender's mode toggle."""
+    for keyconfig in (bpy.context.window_manager.keyconfigs.default,
+                      bpy.context.window_manager.keyconfigs.user):
+        if keyconfig is None:
+            continue
+        for keymap in keyconfig.keymaps:
+            if keymap.name not in {"Object Non-modal", "Mesh", "3D View"}:
+                continue
+            for item in keymap.keymap_items:
+                if (item.type == 'TAB' and not item.shift and not item.ctrl and not item.alt
+                        and item.idname != "wm.call_menu_pie"):
+                    _CONFLICTING_KEYMAP_STATE.append((item, item.active))
+                    item.active = False
+
+
+def _restore_conflicting_alt_q():
+    for item, active in _CONFLICTING_KEYMAP_STATE:
+        try:
+            item.active = active
+        except ReferenceError:
+            pass
+    _CONFLICTING_KEYMAP_STATE.clear()
+
+
+def _register_keymaps():
+    _remove_stale_modeling_keymaps()
+    _disable_conflicting_tab()
     _add_keymap_item(
-        "shortcuts",
+        "tab",
         "3D View",
-        "wm.search_menu",
-        "S",
+        "wm.call_menu_pie",
+        "TAB",
         space_type="VIEW_3D",
+        properties={"name": FUSIONKEYS_MT_modes.bl_idname},
     )
-    _add_keymap_item(
-        "shortcuts",
-        "3D View",
-        "wm.tool_set_by_id",
-        "I",
-        space_type="VIEW_3D",
-        properties={"name": "builtin.measure"},
-    )
-    _add_keymap_item("shortcuts", "Object Mode", "transform.translate", "M")
-    _add_keymap_item("shortcuts", "Mesh", "transform.translate", "M")
-    _add_keymap_item("shortcuts", "Mesh", "mesh.bevel", "F")
-    _add_keymap_item("shortcuts", "Mesh", "mesh.extrude_region_move", "Q")
-    _add_keymap_item("shortcuts", "Window", "ed.redo", "Y", ctrl=True)
 
     preferences = bpy.context.preferences.addons.get(__package__)
     if preferences:
-        _set_group_active(
-            "navigation",
-            preferences.preferences.enable_navigation,
-        )
-        _set_group_active(
-            "shortcuts",
-            preferences.preferences.enable_shortcuts,
-        )
+        _set_group_active("tab", preferences.preferences.enable_modeling_tools)
 
 
 def _unregister_keymaps():
     for items in _KEYMAP_ITEMS.values():
         for keymap, keymap_item in reversed(items):
-            keymap.keymap_items.remove(keymap_item)
+            try:
+                keymap.keymap_items.remove(keymap_item)
+            except (ReferenceError, RuntimeError):
+                # Blender may already have removed an extension keymap during
+                # reload or extension installation. Unregister must remain
+                # idempotent in that case.
+                pass
         items.clear()
 
 
 _CLASSES = (
     FUSIONKEYS_OT_view_cube,
+    FUSIONKEYS_OT_set_selection_mode,
+    FUSIONKEYS_OT_set_object_mode,
+    FUSIONKEYS_OT_toggle_edit_option,
+    FUSIONKEYS_OT_surface_slide,
+    FUSIONKEYS_MT_modes,
+    FUSIONKEYS_MT_modeling,
+    FUSIONKEYS_MT_selection,
+    FUSIONKEYS_MT_extrude,
+    FUSIONKEYS_MT_views,
+    FUSIONKEYS_MT_snapping,
     FUSIONKEYS_GIZMO_view_cube_face,
     FUSIONKEYS_GIZMO_axis_label,
     FUSIONKEYS_GIZMOGROUP_view_cube,
@@ -483,6 +720,7 @@ def register():
 
 def unregister():
     _restore_native_navigation_gizmo()
+    _restore_conflicting_alt_q()
     _unregister_keymaps()
     for cls in reversed(_CLASSES):
         bpy.utils.unregister_class(cls)
