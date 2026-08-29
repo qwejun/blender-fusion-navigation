@@ -36,6 +36,8 @@
 - 编辑模式下的遮挡选择
 - 切换正交 / 透视
 
+**快速双击 `Tab`**（0.35 秒内按两次）可以直接在物体模式和编辑模式之间切换，无需经过菜单。
+
 插件的键盘快捷键只使用 `Tab`，不会占用 `Q`、Page Down、鼠标侧键或其它 Blender 键盘快捷键。
 
 ## 安装
@@ -74,7 +76,7 @@
 ```powershell
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" `
   --command extension validate `
-  ".\dist\fusion_keys_navigation-0.5.7.zip"
+  ".\dist\fusion_keys_navigation-0.5.8.zip"
 ```
 
 ## 兼容性

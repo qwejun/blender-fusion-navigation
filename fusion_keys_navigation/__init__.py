@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Fusion 按键与导航",
     "author": "qwejun",
-    "version": (0, 5, 7),
+    "version": (0, 5, 8),
     "blender": (5, 2, 0),
     "location": "编辑 > 偏好设置 > 插件",
     "description": "复刻 Fusion 360 风格的按键、鼠标导航和视图立方体",
@@ -13,6 +13,7 @@ bl_info = {
 import bpy
 import blf
 import math
+import time
 from bpy_extras import view3d_utils
 from bpy.props import BoolProperty
 from bpy.types import Gizmo, GizmoGroup, Operator, Menu
@@ -152,6 +153,61 @@ class FUSIONKEYS_OT_navigate(Operator):
             return {'CANCELLED'}
         # Let wheel zoom and other viewport shortcuts pass through while the
         # Fusion pan drag is active.
+        return {'PASS_THROUGH'}
+
+
+class FUSIONKEYS_OT_smart_tab(Operator):
+    """Tab: double-press toggles object/edit mode, single press opens the pie."""
+
+    bl_idname = "view3d.fusion_smart_tab"
+    bl_label = "Fusion Tab 模式切换"
+    bl_options = {'INTERNAL'}
+
+    _DOUBLE_PRESS_WINDOW = 0.35
+
+    @classmethod
+    def poll(cls, context):
+        return context.area is not None and context.area.type == 'VIEW_3D'
+
+    def invoke(self, context, event):
+        self._press_time = time.time()
+        self._start_mouse = (event.mouse_region_x, event.mouse_region_y)
+        self._timer = context.window_manager.event_timer_add(
+            self._DOUBLE_PRESS_WINDOW + 0.05, window=context.window
+        )
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def _finish(self, context):
+        context.window_manager.event_timer_remove(self._timer)
+
+    def _toggle_mode(self, context):
+        if context.mode == 'EDIT_MESH':
+            bpy.ops.object.mode_set(mode='OBJECT')
+        elif context.mode == 'OBJECT' and context.active_object is not None:
+            bpy.ops.object.mode_set(mode='EDIT')
+
+    def modal(self, context, event):
+        if event.type == 'TIMER':
+            self._finish(context)
+            bpy.ops.wm.call_menu_pie(name=FUSIONKEYS_MT_modes.bl_idname)
+            return {'FINISHED'}
+        if event.type == 'TAB' and event.value == 'PRESS':
+            if time.time() - self._press_time <= self._DOUBLE_PRESS_WINDOW:
+                self._finish(context)
+                self._toggle_mode(context)
+                return {'FINISHED'}
+            return {'PASS_THROUGH'}
+        if event.type in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
+            mouse = (event.mouse_region_x, event.mouse_region_y)
+            if mouse != self._start_mouse:
+                self._finish(context)
+                bpy.ops.wm.call_menu_pie(name=FUSIONKEYS_MT_modes.bl_idname)
+                return {'FINISHED'}
+            return {'PASS_THROUGH'}
+        if event.type == 'ESC':
+            self._finish(context)
+            return {'CANCELLED'}
         return {'PASS_THROUGH'}
 
 
@@ -630,7 +686,9 @@ def _remove_legacy_user_keymaps():
     touched = set()
     for keymap in keyconfig.keymaps:
         for item in list(keymap.keymap_items):
-            if item.idname == "view3d.fusion_navigate":
+            if item.idname == "view3d.fusion_navigate" or item.idname.startswith(
+                "view3d.fusion_smart_tab"
+            ):
                 keymap.keymap_items.remove(item)
                 touched.add(keymap.name)
                 continue
@@ -741,10 +799,9 @@ def _register_keymaps():
     _add_keymap_item(
         "tab",
         "3D View",
-        "wm.call_menu_pie",
+        "view3d.fusion_smart_tab",
         "TAB",
         space_type="VIEW_3D",
-        properties={"name": FUSIONKEYS_MT_modes.bl_idname},
     )
 
     preferences = bpy.context.preferences.addons.get(__package__)
@@ -769,6 +826,7 @@ def _unregister_keymaps():
 
 _CLASSES = (
     FUSIONKEYS_OT_navigate,
+    FUSIONKEYS_OT_smart_tab,
     FUSIONKEYS_OT_view_cube,
     FUSIONKEYS_OT_set_selection_mode,
     FUSIONKEYS_OT_toggle_object_edit_mode,
