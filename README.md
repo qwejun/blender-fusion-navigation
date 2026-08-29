@@ -1,12 +1,20 @@
 # Blender Fusion Navigation
 
-为习惯 Fusion 360 的用户提供一套轻量、可随时关闭的 Blender 模式菜单过渡层。
+为习惯 Fusion 360 的用户提供一套轻量、可随时关闭的 Blender 导航和模式菜单过渡层。
 
-插件只接管 3D 视图中的 `Tab` 模式菜单和右上角视图立方体。其它导航、建模和快捷键均保持 Blender 原生行为。
+插件只修改 Fusion 鼠标导航、3D 视图中的 `Tab` 模式菜单和右上角视图立方体。其它建模和键盘快捷键均保持 Blender 原生行为。
 
 > Blender 5.2 LTS 扩展，界面语言为中文。
 
 ## 功能
+
+### Fusion 风格鼠标导航
+
+| 操作 | 功能 |
+| --- | --- |
+| 鼠标中键拖动 | 平移视图 |
+| `Shift + 鼠标中键`拖动 | 旋转视图 |
+| 鼠标滚轮 | 缩放视图，保持 Blender 原生行为 |
 
 ### Fusion 风格视图立方体
 
@@ -28,7 +36,7 @@
 - 编辑模式下的遮挡选择
 - 切换正交 / 透视
 
-插件只使用 `Tab`，不会占用 `Q`、Page Down、鼠标侧键或其它 Blender 快捷键。
+插件的键盘快捷键只使用 `Tab`，不会占用 `Q`、Page Down、鼠标侧键或其它 Blender 键盘快捷键。
 
 ## 安装
 
@@ -44,6 +52,7 @@
 
 进入 `编辑 > 偏好设置 > 插件 > Fusion 按键与导航`，可以开关：
 
+- Fusion 鼠标导航
 - Fusion 视图立方体
 - Tab 模式菜单
 
@@ -65,7 +74,7 @@
 ```powershell
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" `
   --command extension validate `
-  ".\dist\fusion_keys_navigation-0.5.5.zip"
+  ".\dist\fusion_keys_navigation-0.5.7.zip"
 ```
 
 ## 兼容性
@@ -80,7 +89,7 @@
 
 ## English
 
-Blender Fusion Navigation is a focused Blender 5.2 LTS add-on that provides a Chinese Tab mode menu and an interactive ViewCube. It leaves Blender's other navigation and shortcuts unchanged.
+Blender Fusion Navigation is a focused Blender 5.2 LTS add-on that provides Fusion-style mouse navigation, a Chinese Tab mode menu, and an interactive ViewCube.
 
 ## 许可与商标
 
