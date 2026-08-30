@@ -26,17 +26,19 @@
 - 彩色 `X/Y/Z` 方向标识
 - 根据 Blender UI 缩放自动调整尺寸和边距
 
-### Tab 模式菜单
+### Tab 模式切换与菜单
 
-在 3D 视图中按 `Tab` 打开中文模式菜单：
+在 3D 视图中 Tab 有两种用法：
 
-- 对象、顶点、边、面模式
-- 撤销
-- 恢复视角
-- 编辑模式下的遮挡选择
-- 切换正交 / 透视
+- **轻点 `Tab`**（按下后立刻松开）：直接在物体模式和编辑模式之间切换
+- **按住 `Tab` 不放**（约 0.4 秒）：弹出中文模式菜单，包含：
+  - 对象、顶点、边、面模式
+  - 撤销
+  - 恢复视角
+  - 编辑模式下的遮挡选择
+  - 切换正交 / 透视
 
-**快速双击 `Tab`**（0.35 秒内按两次）可以直接在物体模式和编辑模式之间切换，无需经过菜单。
+菜单打开后可以点击选项，也可以把鼠标移到对应项上再按一次 `Tab` 确认。
 
 插件的键盘快捷键只使用 `Tab`，不会占用 `Q`、Page Down、鼠标侧键或其它 Blender 键盘快捷键。
 
@@ -76,7 +78,7 @@
 ```powershell
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" `
   --command extension validate `
-  ".\dist\fusion_keys_navigation-0.5.8.zip"
+  ".\dist\fusion_keys_navigation-0.5.9.zip"
 ```
 
 ## 兼容性

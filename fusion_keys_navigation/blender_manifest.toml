@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "fusion_keys_navigation"
-version = "0.5.8"
+version = "0.5.9"
 name = "Fusion 按键与导航"
 tagline = "Fusion 360 风格鼠标导航、视图立方体和 Tab 模式菜单"
 maintainer = "qwejun"

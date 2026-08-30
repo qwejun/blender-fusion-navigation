@@ -3,7 +3,7 @@
 bl_info = {
     "name": "Fusion 按键与导航",
     "author": "qwejun",
-    "version": (0, 5, 8),
+    "version": (0, 5, 9),
     "blender": (5, 2, 0),
     "location": "编辑 > 偏好设置 > 插件",
     "description": "复刻 Fusion 360 风格的按键、鼠标导航和视图立方体",
@@ -28,6 +28,7 @@ _NATIVE_KEYMAP_ITEMS = {
     "navigation": [],
     "tab": [],
 }
+_NATIVE_TAB_ITEMS = []
 _NATIVE_NAV_GIZMO_STATE = {}
 
 # Versions 0.5.3 through 0.5.5 briefly wrote shortcuts into Blender's user
@@ -51,6 +52,41 @@ def _set_group_active(group, active):
         keymap_item.active = active
     for keymap_item, original_active in _NATIVE_KEYMAP_ITEMS[group]:
         keymap_item.active = False if active else original_active
+    if group == "tab":
+        _set_native_tab_items_active(False if active else None)
+
+
+def _set_native_tab_items_active(active):
+    """Disable (or restore) every native plain-Tab binding that competes with
+    the Fusion Tab menu. Discovered at toggle time, not register time, because
+    some keymaps (Object Non-modal) are materialized after startup — at
+    register time the scan runs too early and items like Blender's own
+    view3d.object_mode_pie_or_toggle would stay active and swallow the Tab
+    release in object mode."""
+    if active is False:
+        _NATIVE_TAB_ITEMS.clear()
+        keyconfigs = bpy.context.window_manager.keyconfigs
+        for keyconfig in (keyconfigs.default, keyconfigs.user):
+            if keyconfig is None:
+                continue
+            for keymap_name in ("3D View", "Object Non-modal", "Mesh"):
+                keymap = keyconfig.keymaps.get(keymap_name)
+                if keymap is None:
+                    continue
+                for item in keymap.keymap_items:
+                    if item.idname == "view3d.fusion_smart_tab":
+                        continue
+                    if item.type != 'TAB' or item.shift or item.ctrl or item.alt:
+                        continue
+                    _NATIVE_TAB_ITEMS.append((item, item.active))
+                    item.active = False
+    elif active is True:
+        for item, original_active in _NATIVE_TAB_ITEMS:
+            try:
+                item.active = original_active
+            except ReferenceError:
+                pass
+        _NATIVE_TAB_ITEMS.clear()
 
 
 def _update_navigation(self, _context):
@@ -157,29 +193,47 @@ class FUSIONKEYS_OT_navigate(Operator):
 
 
 class FUSIONKEYS_OT_smart_tab(Operator):
-    """Tab: double-press toggles object/edit mode, single press opens the pie."""
+    """Tap Tab to toggle object/edit mode; hold Tab for the pie menu."""
 
     bl_idname = "view3d.fusion_smart_tab"
     bl_label = "Fusion Tab 模式切换"
     bl_options = {'INTERNAL'}
 
-    _DOUBLE_PRESS_WINDOW = 0.35
+    _HOLD_TIME = 0.4
 
     @classmethod
     def poll(cls, context):
         return context.area is not None and context.area.type == 'VIEW_3D'
 
     def invoke(self, context, event):
-        self._press_time = time.time()
-        self._start_mouse = (event.mouse_region_x, event.mouse_region_y)
+        self._context = context.copy()
         self._timer = context.window_manager.event_timer_add(
-            self._DOUBLE_PRESS_WINDOW + 0.05, window=context.window
+            self._HOLD_TIME, window=context.window
         )
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
 
     def _finish(self, context):
         context.window_manager.event_timer_remove(self._timer)
+
+    def _open_pie(self):
+        # Opening the pie from inside modal dispatch (a TIMER event here)
+        # leaves it in Blender's non-interactive fallback rendering, which
+        # ignores key confirmation and item clicks. A one-shot timer runs in
+        # normal operator context, producing a proper interactive pie. The
+        # overrides are snapshotted up front: once this modal finishes, the
+        # operator instance is destroyed and closures cannot touch it.
+        overrides = {}
+        for key in ("window", "area", "region"):
+            value = self._context.get(key)
+            if value is not None:
+                overrides[key] = value
+
+        def open_pie():
+            with bpy.context.temp_override(**overrides):
+                bpy.ops.wm.call_menu_pie(name=FUSIONKEYS_MT_modes.bl_idname)
+            return None
+        bpy.app.timers.register(open_pie, first_interval=0.0)
 
     def _toggle_mode(self, context):
         if context.mode == 'EDIT_MESH':
@@ -189,22 +243,15 @@ class FUSIONKEYS_OT_smart_tab(Operator):
 
     def modal(self, context, event):
         if event.type == 'TIMER':
+            # Tab held past the tap threshold: open the pie menu.
             self._finish(context)
-            bpy.ops.wm.call_menu_pie(name=FUSIONKEYS_MT_modes.bl_idname)
+            self._open_pie()
             return {'FINISHED'}
-        if event.type == 'TAB' and event.value == 'PRESS':
-            if time.time() - self._press_time <= self._DOUBLE_PRESS_WINDOW:
-                self._finish(context)
-                self._toggle_mode(context)
-                return {'FINISHED'}
-            return {'PASS_THROUGH'}
-        if event.type in {'MOUSEMOVE', 'INBETWEEN_MOUSEMOVE'}:
-            mouse = (event.mouse_region_x, event.mouse_region_y)
-            if mouse != self._start_mouse:
-                self._finish(context)
-                bpy.ops.wm.call_menu_pie(name=FUSIONKEYS_MT_modes.bl_idname)
-                return {'FINISHED'}
-            return {'PASS_THROUGH'}
+        if event.type == 'TAB' and event.value == 'RELEASE':
+            # Quick tap: toggle object/edit mode directly.
+            self._finish(context)
+            self._toggle_mode(context)
+            return {'FINISHED'}
         if event.type == 'ESC':
             self._finish(context)
             return {'CANCELLED'}
@@ -812,6 +859,7 @@ def _register_keymaps():
 
 def _unregister_keymaps():
     _restore_native_keymap_conflicts()
+    _set_native_tab_items_active(True)
     for items in _KEYMAP_ITEMS.values():
         for keymap, keymap_item in reversed(items):
             try:
@@ -839,6 +887,14 @@ _CLASSES = (
 )
 
 
+def _deferred_native_tab_scan():
+    """Re-run the native Tab disable once startup keymaps have materialized."""
+    preferences = bpy.context.preferences.addons.get(__package__)
+    if preferences and preferences.preferences.enable_modeling_tools:
+        _set_native_tab_items_active(False)
+    return None
+
+
 def register():
     for cls in _CLASSES:
         bpy.utils.register_class(cls)
@@ -846,6 +902,7 @@ def register():
     preferences = bpy.context.preferences.addons.get(__package__)
     if preferences and preferences.preferences.enable_view_cube:
         _hide_native_navigation_gizmo()
+    bpy.app.timers.register(_deferred_native_tab_scan, first_interval=1.5)
 
 
 def unregister():
